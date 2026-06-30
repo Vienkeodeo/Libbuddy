@@ -114,7 +114,7 @@ app.MapGet("/api/health", () => Results.Ok(ApiResponse.Ok(new
 
 app.MapLibbuddyEndpoints();
 
-if (app.Environment.IsDevelopment() && app.Configuration.GetValue("Database:SeedOnStartup", true))
+if (app.Configuration.GetValue("Database:SeedOnStartup", true))
 {
     using var scope = app.Services.CreateScope();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
@@ -122,15 +122,8 @@ if (app.Environment.IsDevelopment() && app.Configuration.GetValue("Database:Seed
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        if (IsSqlite(app.Configuration["Database:Provider"]))
-        {
-            await db.Database.EnsureCreatedAsync();
-        }
-        else
-        {
-            await db.Database.ExecuteSqlRawAsync("CREATE EXTENSION IF NOT EXISTS vector;");
-            await db.Database.MigrateAsync();
-        }
+        await db.Database.ExecuteSqlRawAsync("CREATE EXTENSION IF NOT EXISTS vector;");
+        await db.Database.MigrateAsync();
 
         var seeder = scope.ServiceProvider.GetRequiredService<DataSeeder>();
         await seeder.SeedAsync();
