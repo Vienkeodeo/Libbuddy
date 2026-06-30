@@ -1,6 +1,10 @@
 import type { Book } from "@/lib/library-ui-data";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5086/api";
+// At build time, Next.js inlines NEXT_PUBLIC_* env vars. When `output: "export"`
+// is used with newer Next.js, the env var may not be inlined, so we fall back to
+// the production Render URL by default. For local dev / preview overrides, set
+// NEXT_PUBLIC_API_BASE_URL explicitly in `.env.local`.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://libbuddy-api.onrender.com/api";
 const TOKEN_KEY = "libbuddy.accessToken";
 const USER_KEY = "libbuddy.currentUser";
 const COOKIE_TOKEN_KEY = "libbuddy_token";
@@ -109,6 +113,60 @@ export type ReaderDto = {
   phone?: string | null;
   status: string;
   activeBorrows: number;
+};
+
+export type AdminUserDto = {
+  id: string;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  status: string;
+  createdAt: string;
+  roles: string[];
+};
+
+export type AdminUserDetailDto = {
+  id: string;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  status: string;
+  createdAt: string;
+  roles: string[];
+  totalBorrows: number;
+  activeBorrows: number;
+};
+
+export type UpsertBookRequest = {
+  title: string;
+  subtitle?: string;
+  isbn?: string;
+  description?: string;
+  summary?: string;
+  language?: string;
+  publishedYear?: number;
+  publisherName?: string;
+  authorNames: string[];
+  categoryNames: string[];
+  difficultyLevel?: string;
+  readingTimeLevel?: string;
+  targetAudience?: string;
+  coverImageUrl?: string;
+};
+
+export type CategoryDto = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+export type ShelfDto = {
+  id: string;
+  area?: string | null;
+  floor: string;
+  shelfCode: string;
+  sectionCode?: string | null;
+  description?: string | null;
 };
 
 export type TopBookDto = {
@@ -352,6 +410,128 @@ export function createCheckoutOrder(input: {
   });
 }
 
+// ─── Admin API ─────────────────────────────────────────────────────────────────
+
+export function fetchAdminUsers() {
+  return apiRequest<AdminUserDto[]>("/admin/users");
+}
+
+export function fetchAdminUserDetail(id: string) {
+  return apiRequest<AdminUserDetailDto>(`/admin/users/${id}`);
+}
+
+export function createAdminUser(input: {
+  fullName: string;
+  email: string;
+  password: string;
+  phone?: string;
+  roleNames: string[];
+}) {
+  return apiRequest<AdminUserDto>("/admin/users", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateAdminUser(
+  id: string,
+  input: {
+    fullName?: string;
+    phone?: string;
+    status?: string;
+    roleNames?: string[];
+  }
+) {
+  return apiRequest(`/admin/users/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export function deleteAdminUser(id: string) {
+  return apiRequest(`/admin/users/${id}`, { method: "DELETE" });
+}
+
+export function fetchAdminBorrowRecords(params?: {
+  status?: string;
+  userId?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.userId) query.set("userId", params.userId);
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.pageSize) query.set("pageSize", String(params.pageSize));
+  return apiRequest<PaginatedResult<BorrowRecordDto>>(`/admin/borrow-records?${query.toString()}`);
+}
+
+export function fetchAdminCategories() {
+  return apiRequest<CategoryDto[]>("/admin/categories");
+}
+
+export function createAdminCategory(name: string) {
+  return apiRequest<CategoryDto>("/admin/categories", {
+    method: "POST",
+    body: JSON.stringify({ name })
+  });
+}
+
+export function deleteAdminCategory(id: string) {
+  return apiRequest(`/admin/categories/${id}`, { method: "DELETE" });
+}
+
+export function fetchAdminShelves() {
+  return apiRequest<ShelfDto[]>("/admin/shelves");
+}
+
+export function createAdminShelf(input: {
+  area?: string;
+  floor: string;
+  shelfCode: string;
+  sectionCode?: string;
+  description?: string;
+}) {
+  return apiRequest<ShelfDto>("/admin/shelves", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateAdminShelf(
+  id: string,
+  input: {
+    area?: string;
+    floor: string;
+    shelfCode: string;
+    sectionCode?: string;
+    description?: string;
+  }
+) {
+  return apiRequest(`/admin/shelves/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export function createBook(input: UpsertBookRequest) {
+  return apiRequest<unknown>("/books", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateBook(id: string, input: UpsertBookRequest) {
+  return apiRequest(`/books/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export function deleteBook(id: string) {
+  return apiRequest(`/books/${id}`, { method: "DELETE" });
+}
+
 export function mapBookDtoToBook(dto: BookListItemDto): Book {
   const category = dto.categories[0] ?? "Chưa phân loại";
 
@@ -403,3 +583,4 @@ function fromApiReadingTime(value?: string | null): Book["readingTime"] {
   }
   return "Vừa";
 }
+// Tue Jun 30 14:32:37 +07 2026

@@ -7,24 +7,42 @@ import {
   BookOpen,
   Bot,
   Check,
+  ChevronRight,
   Download,
+  Eye,
   FileText,
   LayoutDashboard,
   LibraryBig,
+  Pencil,
+  Plus,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Users,
+  X,
   XCircle
 } from "lucide-react";
 import { BookCover } from "@/components/book-cover";
 import type { Book } from "@/lib/library-ui-data";
 import {
-  fetchBooks,
+  createAdminCategory,
+  createAdminShelf,
+  createAdminUser,
+  createBook,
+  deleteAdminCategory,
+  deleteAdminUser,
+  deleteBook,
+  fetchAdminBorrowRecords,
+  fetchAdminCategories,
+  fetchAdminShelves,
+  fetchAdminUserDetail,
+  fetchAdminUsers,
   fetchAiProviderSettings,
   fetchBorrowRecords,
+  fetchBooks,
   fetchCheckoutOrders,
   fetchDashboardReport,
   fetchMe,
@@ -33,14 +51,21 @@ import {
   mapBookDtoToBook,
   refreshAllBookCovers,
   refreshBookCover,
+  updateAdminUser,
   updateAiProviderSettings,
-  type AiProviderSettingsDto,
+  updateBook,
   updateCheckoutOrderStatus,
+  type AdminUserDetailDto,
+  type AdminUserDto,
+  type AiProviderSettingsDto,
   type BorrowRecordDto,
+  type CategoryDto,
   type CheckoutOrderDto,
   type CurrentUser,
   type DashboardReportDto,
-  type ReaderDto
+  type ReaderDto,
+  type ShelfDto,
+  type UpsertBookRequest
 } from "@/lib/api";
 
 type AdminTab = "overview" | "inventory" | "readers" | "loans" | "ai" | "reports" | "settings";
@@ -68,6 +93,108 @@ export function AdminDashboard() {
   const [orders, setOrders] = useState<CheckoutOrderDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState("");
+
+  // ─── Modal State ─────────────────────────────────────────────────────────────
+  const [bookModal, setBookModal] = useState<{
+    open: boolean;
+    book?: Book;
+    mode: "create" | "edit";
+  }>({ open: false, mode: "create" });
+  const [userModal, setUserModal] = useState<{
+    open: boolean;
+    user?: AdminUserDetailDto;
+    mode: "create" | "edit";
+  }>({ open: false, mode: "create" });
+  const [confirmDelete, setConfirmDelete] = useState<{
+    open: boolean;
+    type: "book" | "user";
+    id: string;
+    label: string;
+  }>({ open: false, type: "book", id: "", label: "" });
+  const [crudMessage, setCrudMessage] = useState("");
+
+  async function handleSaveBook(data: UpsertBookRequest) {
+    try {
+      if (bookModal.mode === "edit" && bookModal.book) {
+        await updateBook(bookModal.book.id, data);
+        setCrudMessage("Đã cập nhật sách thành công.");
+      } else {
+        await createBook(data);
+        setCrudMessage("Đã thêm sách mới thành công.");
+      }
+      setBookModal({ open: false, mode: "create" as const });
+      await loadAdminData();
+    } catch (err) {
+      setCrudMessage(err instanceof Error ? err.message : "Lỗi khi lưu sách.");
+    }
+  }
+
+  async function handleDeleteBook(id: string) {
+    try {
+      await deleteBook(id);
+      setConfirmDelete({ open: false, type: "book", id: "", label: "" });
+      setCrudMessage("Đã xóa sách thành công.");
+      await loadAdminData();
+    } catch (err) {
+      setCrudMessage(err instanceof Error ? err.message : "Lỗi khi xóa sách.");
+    }
+  }
+
+  async function handleSaveUser(data: {
+    fullName: string;
+    email: string;
+    password?: string;
+    phone?: string;
+    roleNames: string[];
+    status?: string;
+  }) {
+    try {
+      if (userModal.mode === "edit" && userModal.user) {
+        await updateAdminUser(userModal.user.id, {
+          fullName: data.fullName,
+          phone: data.phone,
+          roleNames: data.roleNames,
+          status: data.status
+        });
+        setCrudMessage("Đã cập nhật người dùng thành công.");
+      } else {
+        if (!data.password) throw new Error("Mật khẩu là bắt buộc.");
+        await createAdminUser({ ...data, password: data.password });
+        setCrudMessage("Đã tạo người dùng mới thành công.");
+      }
+      setUserModal({ open: false, mode: "create" as const });
+    } catch (err) {
+      setCrudMessage(err instanceof Error ? err.message : "Lỗi khi lưu người dùng.");
+    }
+  }
+
+  async function handleDeleteUser(id: string) {
+    try {
+      await deleteAdminUser(id);
+      setConfirmDelete({ open: false, type: "user", id: "", label: "" });
+      setCrudMessage("Đã xóa người dùng thành công.");
+    } catch (err) {
+      setCrudMessage(err instanceof Error ? err.message : "Lỗi khi xóa người dùng.");
+    }
+  }
+
+  async function handleAddCategory(name: string) {
+    try {
+      await createAdminCategory(name);
+      setCrudMessage("Đã thêm thể loại mới.");
+    } catch (err) {
+      setCrudMessage(err instanceof Error ? err.message : "Lỗi khi thêm thể loại.");
+    }
+  }
+
+  async function handleDeleteCategory(id: string) {
+    try {
+      await deleteAdminCategory(id);
+      setCrudMessage("Đã xóa thể loại.");
+    } catch (err) {
+      setCrudMessage(err instanceof Error ? err.message : "Lỗi khi xóa thể loại.");
+    }
+  }
   const active = tabs.find((tab) => tab.key === activeTab) ?? tabs[0];
   const isAuthorized = Boolean(currentUser?.roles.some((role) => adminRoles.includes(role)));
 
@@ -156,8 +283,8 @@ export function AdminDashboard() {
   }
 
   return (
-    <div className="lb-page">
-      <div className="mx-auto grid max-w-[1500px] gap-6 px-5 py-6 lg:grid-cols-[248px_1fr] lg:px-9">
+    <>
+    <div className="mx-auto grid max-w-[1500px] gap-6 px-5 py-6 lg:grid-cols-[248px_1fr] lg:px-9">
         <aside className="hidden rounded-lg border border-slate-900 bg-slate-950 p-3 text-white shadow-sm lg:block">
           <div className="flex items-center gap-3 px-2 py-4">
             <span className="grid h-10 w-10 place-items-center rounded-lg bg-emerald-600">
@@ -249,17 +376,68 @@ export function AdminDashboard() {
 
           {loading ? <LoadingState /> : null}
           {!loading && activeTab === "overview" ? <OverviewTab report={report} books={catalog} orders={orders} records={borrowRecords} /> : null}
-          {!loading && activeTab === "inventory" ? <InventoryTab books={catalog} query={query} onRefreshBook={loadAdminData} /> : null}
-          {!loading && activeTab === "readers" ? <ReadersTab readers={readers} query={query} /> : null}
+          {!loading && activeTab === "inventory" ? (
+            <InventoryTab
+              books={catalog}
+              query={query}
+              onRefreshBook={loadAdminData}
+              onCreateBook={() => setBookModal({ open: true, mode: "create" })}
+              onEditBook={(book) => setBookModal({ open: true, book, mode: "edit" })}
+              onDeleteBook={(id, label) => setConfirmDelete({ open: true, type: "book", id, label })}
+              message={crudMessage}
+            />
+          ) : null}
+          {!loading && activeTab === "readers" ? (
+            <ReadersTab
+              readers={readers}
+              query={query}
+              onCreateUser={() => setUserModal({ open: true, mode: "create" })}
+              onEditUser={(id: string) => setUserModal({ open: true, mode: "edit", user: { id } as any })}
+              onDeleteUser={(id, label) => setConfirmDelete({ open: true, type: "user", id, label })}
+              message={crudMessage}
+            />
+          ) : null}
           {!loading && activeTab === "loans" ? (
             <LoansTab orders={orders} records={borrowRecords} query={query} onOrderStatus={handleOrderStatus} />
           ) : null}
           {!loading && activeTab === "ai" ? <AiTab report={report} /> : null}
           {!loading && activeTab === "reports" ? <ReportsTab report={report} books={catalog} readers={readers} orders={orders} records={borrowRecords} /> : null}
           {!loading && activeTab === "settings" ? <SettingsTab onRefreshAllCovers={loadAdminData} /> : null}
-        </main>
-      </div>
+
+      {/* ─── Modals ─────────────────────────────────────────────────── */}
+      {bookModal.open ? (
+        <BookModal
+          book={bookModal.book}
+          mode={bookModal.mode}
+          onSave={handleSaveBook}
+          onClose={() => setBookModal({ open: false, mode: "create" as const })}
+        />
+      ) : null}
+
+      {userModal.open ? (
+        <UserModal
+          userId={userModal.user?.id}
+          mode={userModal.mode}
+          onSave={handleSaveUser}
+          onClose={() => setUserModal({ open: false, mode: "create" as const })}
+        />
+      ) : null}
+
+      {confirmDelete.open ? (
+        <ConfirmDeleteModal
+          type={confirmDelete.type}
+          label={confirmDelete.label}
+          onConfirm={() =>
+            confirmDelete.type === "book"
+              ? handleDeleteBook(confirmDelete.id)
+              : handleDeleteUser(confirmDelete.id)
+          }
+          onClose={() => setConfirmDelete({ open: false, type: "book", id: "", label: "" })}
+        />
+      ) : null}
+      </main>
     </div>
+    </>
   );
 }
 
@@ -314,7 +492,23 @@ function OverviewTab({
   );
 }
 
-function InventoryTab({ books, query, onRefreshBook }: { books: Book[]; query: string; onRefreshBook?: () => void }) {
+function InventoryTab({
+  books,
+  query,
+  onRefreshBook,
+  onCreateBook,
+  onEditBook,
+  onDeleteBook,
+  message
+}: {
+  books: Book[];
+  query: string;
+  onRefreshBook?: () => void;
+  onCreateBook: () => void;
+  onEditBook: (book: Book) => void;
+  onDeleteBook: (id: string, label: string) => void;
+  message?: string;
+}) {
   const [category, setCategory] = useState("Tất cả");
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [refreshMessage, setRefreshMessage] = useState("");
@@ -341,7 +535,23 @@ function InventoryTab({ books, query, onRefreshBook }: { books: Book[]; query: s
 
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <Panel title="Kho sách" subtitle="Theo dõi tình trạng còn bản và vị trí kệ.">
+      <Panel
+        title={
+          <div className="flex items-center justify-between">
+            <span>Kho sách</span>
+            <button
+              type="button"
+              onClick={onCreateBook}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+            >
+              <Plus className="h-4 w-4" />
+              Thêm sách
+            </button>
+          </div>
+        }
+        subtitle="Theo dõi tình trạng còn bản và vị trí kệ."
+      >
+        {message ? <div className="mb-4 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{message}</div> : null}
         {refreshMessage ? <div className="mb-4 rounded-md border border-blue-100 bg-blue-50 p-3 text-sm font-semibold text-blue-800">{refreshMessage}</div> : null}
         <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
           <div className="rounded-lg border border-[var(--line)] bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
@@ -357,7 +567,13 @@ function InventoryTab({ books, query, onRefreshBook }: { books: Book[]; query: s
             ))}
           </select>
         </div>
-        <BookRows items={filtered} onRefreshCover={handleRefreshCover} refreshingId={refreshingId} />
+        <BookRows
+          items={filtered}
+          onRefreshCover={handleRefreshCover}
+          refreshingId={refreshingId}
+          onEditBook={onEditBook}
+          onDeleteBook={onDeleteBook}
+        />
       </Panel>
       <aside className="space-y-5">
         <Panel title="Tình trạng kho" subtitle="Số bản khả dụng theo catalog hiện tại.">
@@ -377,14 +593,44 @@ function InventoryTab({ books, query, onRefreshBook }: { books: Book[]; query: s
   );
 }
 
-function ReadersTab({ readers, query }: { readers: ReaderDto[]; query: string }) {
+function ReadersTab({
+  readers,
+  query,
+  onCreateUser,
+  onEditUser,
+  onDeleteUser,
+  message
+}: {
+  readers: ReaderDto[];
+  query: string;
+  onCreateUser: () => void;
+  onEditUser: (id: string) => void;
+  onDeleteUser: (id: string, label: string) => void;
+  message?: string;
+}) {
   const filtered = readers.filter((reader) =>
     `${reader.fullName} ${reader.email} ${reader.phone ?? ""} ${reader.status}`.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <Panel title="Danh sách độc giả" subtitle="Đọc trạng thái trực tiếp từ hệ thống tài khoản.">
+      <Panel
+        title={
+          <div className="flex items-center justify-between">
+            <span>Danh sách độc giả</span>
+            <button
+              type="button"
+              onClick={onCreateUser}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+            >
+              <Plus className="h-4 w-4" />
+              Thêm người dùng
+            </button>
+          </div>
+        }
+        subtitle="Đọc trạng thái trực tiếp từ hệ thống tài khoản."
+      >
+        {message ? <div className="mb-4 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{message}</div> : null}
         <div className="grid gap-4 md:grid-cols-2">
           {filtered.map((reader) => (
             <article key={reader.id} className="lb-surface-flat p-4">
@@ -395,7 +641,27 @@ function ReadersTab({ readers, query }: { readers: ReaderDto[]; query: string })
                   <p className="truncate text-sm text-slate-500">{reader.email}</p>
                   {reader.phone ? <p className="mt-1 text-sm text-slate-500">{reader.phone}</p> : null}
                 </div>
-                <Badge tone={reader.status === "Active" ? "green" : "amber"}>{translateUserStatus(reader.status)}</Badge>
+                <div className="flex flex-col items-end gap-2">
+                  <Badge tone={reader.status === "Active" ? "green" : "amber"}>{translateUserStatus(reader.status)}</Badge>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onEditUser(reader.id)}
+                      className="lb-btn-ghost inline-flex h-8 w-8 items-center justify-center p-0 text-blue-700 hover:border-blue-300 hover:bg-blue-50"
+                      title="Sửa người dùng"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteUser(reader.id, reader.fullName)}
+                      className="lb-btn-ghost inline-flex h-8 w-8 items-center justify-center p-0 text-rose-700 hover:border-rose-300 hover:bg-rose-50"
+                      title="Xóa người dùng"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                 <MiniStat label="Đang mượn" value={reader.activeBorrows} />
@@ -717,7 +983,19 @@ function SettingsTab({ onRefreshAllCovers }: { onRefreshAllCovers?: () => void }
   );
 }
 
-function BookRows({ items, onRefreshCover, refreshingId }: { items: Book[]; onRefreshCover?: (bookId: string) => void; refreshingId?: string | null }) {
+function BookRows({
+  items,
+  onRefreshCover,
+  refreshingId,
+  onEditBook,
+  onDeleteBook
+}: {
+  items: Book[];
+  onRefreshCover?: (bookId: string) => void;
+  refreshingId?: string | null;
+  onEditBook?: (book: Book) => void;
+  onDeleteBook?: (id: string, label: string) => void;
+}) {
   return (
     <div className="space-y-3">
       {items.map((book) => (
@@ -730,25 +1008,42 @@ function BookRows({ items, onRefreshCover, refreshingId }: { items: Book[]; onRe
             </p>
             <p className="mt-1 truncate text-xs font-semibold text-slate-500">{book.shelf}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge tone={book.available > 0 ? "green" : "amber"}>{book.available > 0 ? "Còn sẵn" : "Hết bản"}</Badge>
-            <span className="text-sm font-bold text-slate-700">
-              {book.available}/{book.total}
-            </span>
+          <div className="flex items-center gap-1.5">
+            <Badge tone={book.available > 0 ? "green" : "amber"}>{book.available > 0 ? "Còn" : "Hết"}</Badge>
+            <span className="text-sm font-bold text-slate-700">{book.available}/{book.total}</span>
             {onRefreshCover ? (
               <button
                 type="button"
                 onClick={() => onRefreshCover(book.id)}
                 disabled={refreshingId === book.id}
                 className="lb-btn-ghost inline-flex h-9 items-center gap-1 px-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"
-                title="Làm mới bìa sách"
+                title="Làm mới bìa"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${refreshingId === book.id ? "animate-spin" : ""}`} />
-                Bìa
               </button>
             ) : null}
-            <Link href={`/books?focus=${book.id}`} className="inline-flex h-9 items-center lb-btn-ghost px-3 text-sm font-bold">
-              Xem
+            {onEditBook ? (
+              <button
+                type="button"
+                onClick={() => onEditBook(book)}
+                className="lb-btn-ghost inline-flex h-9 items-center gap-1 px-2 text-xs font-bold text-blue-700 hover:border-blue-300 hover:bg-blue-50"
+                title="Sửa sách"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+            {onDeleteBook ? (
+              <button
+                type="button"
+                onClick={() => onDeleteBook(book.id, book.title)}
+                className="lb-btn-ghost inline-flex h-9 items-center gap-1 px-2 text-xs font-bold text-rose-700 hover:border-rose-300 hover:bg-rose-50"
+                title="Xóa sách"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+            <Link href={`/books?focus=${book.id}`} className="lb-btn-ghost inline-flex h-9 items-center px-2 text-xs font-bold" title="Xem chi tiết">
+              <Eye className="h-3.5 w-3.5" />
             </Link>
           </div>
         </div>
@@ -874,7 +1169,218 @@ function StackedBars({ items, emptyText }: { items: { label: string; value: numb
   );
 }
 
-function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+// ─── Modal Components ───────────────────────────────────────────────────────────
+
+function ModalHeader({ title, subtitle, onClose }: { title: string; subtitle?: string; onClose: () => void }) {
+  return (
+    <div className="flex items-start justify-between border-b border-slate-100 p-5">
+      <div>
+        <h2 className="text-xl font-bold text-slate-950">{title}</h2>
+        {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+      </div>
+      <button type="button" onClick={onClose} className="lb-btn-ghost flex h-9 w-9 items-center justify-center p-0 text-slate-500 hover:text-slate-700">
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
+function BookModal({ book, mode, onSave, onClose }: { book?: Book; mode: "create" | "edit"; onSave: (data: UpsertBookRequest) => void; onClose: () => void }) {
+  const [title, setTitle] = useState(book?.title ?? "");
+  const [isbn, setIsbn] = useState("");
+  const [description, setDescription] = useState(book?.description ?? "");
+  const [authors, setAuthors] = useState(book?.author ?? "");
+  const [categories, setCategories] = useState(book?.category ?? "");
+  const [publisher, setPublisher] = useState("");
+  const [year, setYear] = useState("");
+  const [language, setLanguage] = useState("Vietnamese");
+  const [difficulty, setDifficulty] = useState("Medium");
+  const [readingTime, setReadingTime] = useState("Medium");
+  const [audience, setAudience] = useState(book?.audience ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setSaving(true);
+    try {
+      await onSave({
+        title: title.trim(),
+        isbn: isbn.trim() || undefined,
+        description: description.trim() || undefined,
+        summary: description.trim() || undefined,
+        authorNames: authors.split(",").map((a) => a.trim()).filter(Boolean),
+        categoryNames: categories.split(",").map((c) => c.trim()).filter(Boolean),
+        publisherName: publisher.trim() || undefined,
+        publishedYear: year ? parseInt(year) : undefined,
+        language: language.trim() || undefined,
+        difficultyLevel: difficulty,
+        readingTimeLevel: readingTime,
+        targetAudience: audience.trim() || undefined
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <ModalHeader title={mode === "create" ? "Thêm sách mới" : "Sửa sách"} subtitle={mode === "edit" && book ? book.title : "Điền thông tin sách"} onClose={onClose} />
+        <form onSubmit={handleSubmit} className="space-y-4 p-5">
+          <FormField label="Tên sách *" required>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} required className="lb-input h-11 w-full px-3" placeholder="Nhập tên sách" />
+          </FormField>
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="ISBN"><input value={isbn} onChange={(e) => setIsbn(e.target.value)} className="lb-input h-11 w-full px-3" placeholder="978-..." /></FormField>
+            <FormField label="Nhà xuất bản"><input value={publisher} onChange={(e) => setPublisher(e.target.value)} className="lb-input h-11 w-full px-3" placeholder="Nhã Nam, First News..." /></FormField>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <FormField label="Năm xuất bản"><input value={year} onChange={(e) => setYear(e.target.value)} type="number" className="lb-input h-11 w-full px-3" placeholder="2024" /></FormField>
+            <FormField label="Ngôn ngữ">
+              <select value={language} onChange={(e) => setLanguage(e.target.value)} className="lb-input h-11 w-full px-3">
+                <option value="Vietnamese">Tiếng Việt</option><option value="English">English</option><option value="French">Français</option><option value="Japanese">日本語</option><option value="Korean">한국어</option>
+              </select>
+            </FormField>
+            <FormField label="Độ khó">
+              <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="lb-input h-11 w-full px-3">
+                <option value="Easy">Dễ đọc</option><option value="Medium">Vừa phải</option><option value="Hard">Chuyên sâu</option>
+              </select>
+            </FormField>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField label="Thời lượng đọc">
+              <select value={readingTime} onChange={(e) => setReadingTime(e.target.value)} className="lb-input h-11 w-full px-3">
+                <option value="Short">Ngắn (&lt; 2h)</option><option value="Medium">Vừa (2-5h)</option><option value="Long">Dài (&gt; 5h)</option>
+              </select>
+            </FormField>
+            <FormField label="Đối tượng"><input value={audience} onChange={(e) => setAudience(e.target.value)} className="lb-input h-11 w-full px-3" placeholder="Sinh viên, người lớn..." /></FormField>
+          </div>
+          <FormField label="Tác giả (phân cách bằng dấu phẩy)"><input value={authors} onChange={(e) => setAuthors(e.target.value)} className="lb-input h-11 w-full px-3" placeholder="Nguyễn Nhật Ánh, Mark Manson..." /></FormField>
+          <FormField label="Thể loại (phân cách bằng dấu phẩy)"><input value={categories} onChange={(e) => setCategories(e.target.value)} className="lb-input h-11 w-full px-3" placeholder="Văn học, Phát triển bản thân..." /></FormField>
+          <FormField label="Mô tả"><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="lb-input w-full px-3 py-2" placeholder="Tóm tắt nội dung sách..." /></FormField>
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+            <button type="button" onClick={onClose} className="lb-btn-ghost h-11 px-6 font-bold">Hủy</button>
+            <button type="submit" disabled={saving || !title.trim()} className="lb-btn-primary inline-flex h-11 items-center gap-2 px-6 font-bold disabled:opacity-50">
+              {saving ? "Đang lưu..." : mode === "create" ? "Thêm sách" : "Lưu thay đổi"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function UserModal({ userId, mode, onSave, onClose }: { userId?: string; mode: "create" | "edit"; onSave: (data: { fullName: string; email: string; password?: string; phone?: string; roleNames: string[]; status?: string }) => void; onClose: () => void }) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [roles, setRoles] = useState<string[]>(["Reader"]);
+  const [status, setStatus] = useState("Active");
+  const [saving, setSaving] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(mode === "edit" && Boolean(userId));
+  const allRoles = ["Admin", "Manager", "Librarian", "Reader"];
+
+  useEffect(() => {
+    if (mode === "edit" && userId) {
+      fetchAdminUserDetail(userId)
+        .then((user) => { setFullName(user.fullName); setEmail(user.email); setPhone(user.phone ?? ""); setRoles(user.roles); setStatus(user.status); })
+        .catch(() => {})
+        .finally(() => setLoadingDetail(false));
+    }
+  }, [mode, userId]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!fullName.trim() || !email.trim()) return;
+    if (mode === "create" && !password.trim()) return;
+    setSaving(true);
+    try { await onSave({ fullName: fullName.trim(), email: email.trim(), password: password.trim() || undefined, phone: phone.trim() || undefined, roleNames: roles, status }); }
+    finally { setSaving(false); }
+  }
+
+  function toggleRole(role: string) { setRoles((prev) => prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]); }
+
+  if (loadingDetail) {
+    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"><div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-200 border-t-emerald-600" /></div>;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <ModalHeader title={mode === "create" ? "Thêm người dùng" : "Sửa người dùng"} subtitle={mode === "edit" ? email : "Tạo tài khoản mới"} onClose={onClose} />
+        <form onSubmit={handleSubmit} className="space-y-4 p-5">
+          <FormField label="Họ và tên *" required><input value={fullName} onChange={(e) => setFullName(e.target.value)} required className="lb-input h-11 w-full px-3" placeholder="Nguyễn Văn A" /></FormField>
+          <FormField label="Email *" required><input value={email} onChange={(e) => setEmail(e.target.value)} required type="email" className="lb-input h-11 w-full px-3" placeholder="email@libbuddy.local" /></FormField>
+          {mode === "create" ? <FormField label="Mật khẩu *" required><input value={password} onChange={(e) => setPassword(e.target.value)} required type="password" className="lb-input h-11 w-full px-3" placeholder="********" /></FormField> : null}
+          <FormField label="Số điện thoại"><input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" className="lb-input h-11 w-full px-3" placeholder="0901..." /></FormField>
+          <FormField label="Vai trò">
+            <div className="flex flex-wrap gap-2">
+              {allRoles.map((role) => (
+                <button key={role} type="button" onClick={() => toggleRole(role)}
+                  className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold transition ${roles.includes(role) ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}>
+                  <ShieldCheck className="h-4 w-4" />{role}
+                </button>
+              ))}
+            </div>
+          </FormField>
+          {mode === "edit" ? <FormField label="Trạng thái">
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="lb-input h-11 w-full px-3">
+              <option value="Active">Hoạt động</option><option value="Locked">Bị khóa</option><option value="Suspended">Tạm ngưng</option>
+            </select>
+          </FormField> : null}
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+            <button type="button" onClick={onClose} className="lb-btn-ghost h-11 px-6 font-bold">Hủy</button>
+            <button type="submit" disabled={saving || !fullName.trim() || !email.trim() || (mode === "create" && !password.trim())} className="lb-btn-primary inline-flex h-11 items-center gap-2 px-6 font-bold disabled:opacity-50">
+              {saving ? "Đang lưu..." : mode === "create" ? "Tạo người dùng" : "Lưu thay đổi"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDeleteModal({ type, label, onConfirm, onClose }: { type: "book" | "user"; label: string; onConfirm: () => void; onClose: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  function handleConfirm() { setConfirming(true); onConfirm(); }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between border-b border-slate-100 p-5">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-rose-100"><Trash2 className="h-5 w-5 text-rose-600" /></div>
+            <h2 className="text-lg font-bold text-slate-950">Xác nhận xóa</h2>
+          </div>
+          <button type="button" onClick={onClose} className="lb-btn-ghost flex h-9 w-9 items-center justify-center p-0 text-slate-500"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-slate-600">Bạn có chắc muốn xóa {type === "book" ? "sách" : "người dùng"} <span className="font-bold text-slate-950">&ldquo;{label}&rdquo;</span>? Hành động này không thể hoàn tác.</p>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 p-5">
+          <button type="button" onClick={onClose} className="lb-btn-ghost h-11 px-5 font-bold">Hủy</button>
+          <button type="button" onClick={handleConfirm} disabled={confirming} className="inline-flex h-11 items-center gap-2 rounded-md bg-rose-600 px-5 font-bold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50">
+            {confirming ? "Đang xóa..." : "Xóa"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormField({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-bold text-slate-700">{label}{required ? <span className="ml-1 text-rose-500">*</span> : null}</label>
+      {children}
+    </div>
+  );
+}
+
+// ─── Panel Component ───────────────────────────────────────────────────────────
+
+function Panel({ title, subtitle, children }: { title: ReactNode; subtitle?: string; children: ReactNode }) {
   return (
     <section className="lb-surface">
       <div className="border-b border-slate-100 p-5">

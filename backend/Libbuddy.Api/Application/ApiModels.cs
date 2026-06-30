@@ -201,3 +201,56 @@ public record NeedAnalysis(
     string? FollowUpQuestion,
     string Purpose = "reading_advice",
     string Language = "vietnamese");
+
+// Admin DTOs
+public record AdminUserDto(
+    Guid Id,
+    string FullName,
+    string Email,
+    string? Phone,
+    string Status,
+    DateTime CreatedAt,
+    IReadOnlyList<string> Roles);
+
+public record AdminUserDetailDto(
+    Guid Id,
+    string FullName,
+    string Email,
+    string? Phone,
+    string Status,
+    DateTime CreatedAt,
+    IReadOnlyList<string> Roles,
+    int TotalBorrows,
+    int ActiveBorrows);
+
+public record UpdateAdminUserRequest(
+    string? FullName,
+    string? Phone,
+    string? Status,
+    IReadOnlyList<string>? RoleNames);
+
+public record CreateAdminUserRequest(
+    string FullName,
+    string Email,
+    string Password,
+    string? Phone,
+    IReadOnlyList<string> RoleNames);
+
+public record CategoryDto(Guid Id, string Name, DateTime CreatedAt);
+
+public record CreateCategoryRequest(string Name);
+
+public record ShelfDto(
+    Guid Id,
+    string? Area,
+    string Floor,
+    string ShelfCode,
+    string? SectionCode,
+    string? Description);
+
+public record CreateShelfRequest(
+    string? Area,
+    string Floor,
+    string ShelfCode,
+    string? SectionCode,
+    string? Description);

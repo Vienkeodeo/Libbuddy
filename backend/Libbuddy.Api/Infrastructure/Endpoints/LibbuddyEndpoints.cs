@@ -14,6 +14,7 @@ public static class LibbuddyEndpoints
         MapAuth(app);
         MapBooks(app);
         MapAdminCovers(app);
+        MapAdmin(app);
         MapUsers(app);
         MapBorrowRecords(app);
         MapCheckout(app);
@@ -334,7 +335,11 @@ public static class LibbuddyEndpoints
                 return Results.NotFound(ApiResponse.Fail("Không tìm thấy sách."));
             }
 
-            var url = await coverService.FetchCoverUrlAsync(book.Id, book.Isbn, book.Title, cancellationToken);
+            var authorNames = string.Join(", ", await db.BookAuthors
+                .Where(x => x.BookId == book.Id)
+                .Select(x => x.Author.FullName)
+                .ToListAsync(cancellationToken));
+            var url = await coverService.FetchCoverUrlAsync(book.Id, book.Isbn, book.Title, authorNames, cancellationToken);
             if (!string.IsNullOrEmpty(url))
             {
                 book.CoverImageUrl = url;
@@ -352,6 +357,273 @@ public static class LibbuddyEndpoints
         {
             var refreshed = await coverService.RefreshAllCoversAsync(cancellationToken);
             return Results.Ok(ApiResponse<object>.Ok(new { refreshed }, $"Đã cập nhật {refreshed} bìa sách."));
+        });
+    }
+
+    private static void MapAdmin(WebApplication app)
+    {
+        // ─── Users ────────────────────────────────────────────────────────────────
+        var userGroup = app.MapGroup("/api/admin/users").WithTags("Admin - Users").RequireAuthorization("AdminOnly");
+
+        // GET /api/admin/users — all users with roles
+        userGroup.MapGet("/", async (AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var users = await db.Users
+                .AsNoTracking()
+                .Include(x => x.UserRoles).ThenInclude(x => x.Role)
+                .OrderBy(x => x.FullName)
+                .Select(x => new AdminUserDto(
+                    x.Id,
+                    x.FullName,
+                    x.Email,
+                    x.Phone,
+                    x.Status.ToString(),
+                    x.CreatedAt,
+                    x.UserRoles.Select(r => r.Role.Name).ToList()))
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(ApiResponse.Ok(users));
+        }).RequireAuthorization("AdminOnly");
+
+        // GET /api/admin/users/{id}
+        userGroup.MapGet("/{id:guid}", async (Guid id, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var user = await db.Users
+                .AsNoTracking()
+                .Include(x => x.UserRoles).ThenInclude(x => x.Role)
+                .Include(x => x.BorrowRecords).ThenInclude(r => r.Items)
+                .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+            if (user is null)
+            {
+                return Results.NotFound(ApiResponse.Fail("Không tìm thấy người dùng."));
+            }
+
+            var dto = new AdminUserDetailDto(
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.Phone,
+                user.Status.ToString(),
+                user.CreatedAt,
+                user.UserRoles.Select(r => r.Role.Name).ToList(),
+                user.BorrowRecords.Count,
+                user.BorrowRecords.Count(r => r.Status == BorrowStatus.Borrowing || r.Status == BorrowStatus.Overdue));
+
+            return Results.Ok(ApiResponse.Ok(dto));
+        }).RequireAuthorization("AdminOnly");
+
+        // PUT /api/admin/users/{id} — update profile + roles
+        userGroup.MapPut("/{id:guid}", async (Guid id, UpdateAdminUserRequest request, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var user = await db.Users
+                .Include(x => x.UserRoles)
+                .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+            if (user is null)
+            {
+                return Results.NotFound(ApiResponse.Fail("Không tìm thấy người dùng."));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.FullName))
+            {
+                user.FullName = request.FullName.Trim();
+            }
+            if (request.Phone is not null)
+            {
+                user.Phone = request.Phone;
+            }
+            if (request.Status is not null && Enum.TryParse<UserStatus>(request.Status, out var status))
+            {
+                user.Status = status;
+            }
+            if (request.RoleNames is { Count: > 0 })
+            {
+                user.UserRoles.Clear();
+                foreach (var roleName in request.RoleNames)
+                {
+                    var role = await db.Roles.FirstOrDefaultAsync(r => r.Name == roleName, cancellationToken);
+                    if (role is not null)
+                    {
+                        user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = role.Id });
+                    }
+                }
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Ok(ApiResponse.Ok(new { id = user.Id }, "Đã cập nhật người dùng."));
+        }).RequireAuthorization("AdminOnly");
+
+        // POST /api/admin/users — create user with role
+        userGroup.MapPost("/", async (CreateAdminUserRequest request, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            if (await db.Users.AnyAsync(x => x.Email == request.Email.Trim().ToLowerInvariant(), cancellationToken))
+            {
+                return Results.Conflict(ApiResponse.Fail("Email đã tồn tại."));
+            }
+            var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+            var user = new User
+            {
+                FullName = request.FullName.Trim(),
+                Email = request.Email.Trim().ToLowerInvariant(),
+                Phone = request.Phone,
+                PasswordHash = passwordHash,
+                Status = UserStatus.Active
+            };
+            db.Users.Add(user);
+            await db.SaveChangesAsync(cancellationToken);
+
+            foreach (var roleName in request.RoleNames)
+            {
+                var role = await db.Roles.FirstOrDefaultAsync(r => r.Name == roleName, cancellationToken);
+                if (role is not null)
+                {
+                    db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = role.Id });
+                }
+            }
+            await db.SaveChangesAsync(cancellationToken);
+
+            return Results.Created($"/api/admin/users/{user.Id}",
+                ApiResponse<AdminUserDto>.Ok(new AdminUserDto(user.Id, user.FullName, user.Email, user.Phone,
+                    user.Status.ToString(), user.CreatedAt, request.RoleNames)));
+        }).RequireAuthorization("AdminOnly");
+
+        // DELETE /api/admin/users/{id}
+        userGroup.MapDelete("/{id:guid}", async (Guid id, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var user = await db.Users
+                .Include(x => x.UserRoles)
+                .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+            if (user is null)
+            {
+                return Results.NotFound(ApiResponse.Fail("Không tìm thấy người dùng."));
+            }
+            user.Status = UserStatus.Deleted;
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Ok(ApiResponse.Ok(new { id }, "Đã xóa người dùng."));
+        }).RequireAuthorization("AdminOnly");
+
+        // ─── Borrow Records (Admin view) ──────────────────────────────────────────
+        var brGroup = app.MapGroup("/api/admin/borrow-records").WithTags("Admin - Borrow Records").RequireAuthorization("AdminOrLibrarian");
+
+        // GET /api/admin/borrow-records
+        brGroup.MapGet("/", async (AppDbContext db, string? status, string? userId, int? page, int? pageSize, CancellationToken cancellationToken) =>
+        {
+            var query = db.BorrowRecords
+                .AsNoTracking()
+                .Include(x => x.User)
+                .Include(x => x.Items).ThenInclude(x => x.BookCopy).ThenInclude(x => x.Book)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<BorrowStatus>(status, out var bs))
+            {
+                query = query.Where(x => x.Status == bs);
+            }
+            if (!string.IsNullOrWhiteSpace(userId) && Guid.TryParse(userId, out var uid))
+            {
+                query = query.Where(x => x.UserId == uid);
+            }
+
+            var total = await query.CountAsync(cancellationToken);
+            var items = await query
+                .OrderByDescending(x => x.BorrowDate)
+                .Skip(((page ?? 1) - 1) * (pageSize ?? 20))
+                .Take(pageSize ?? 20)
+                .ToListAsync(cancellationToken);
+
+            var dtos = items.Select(r => ToBorrowDto(r)).ToList();
+            return Results.Ok(ApiResponse.Ok(new PaginatedResult<BorrowRecordDto>(dtos, page ?? 1, pageSize ?? 20, total)));
+        });
+
+        // GET /api/admin/borrow-records/{id}
+        brGroup.MapGet("/{id:guid}", async (Guid id, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var record = await db.BorrowRecords
+                .AsNoTracking()
+                .Include(x => x.User)
+                .Include(x => x.Items).ThenInclude(x => x.BookCopy).ThenInclude(x => x.Book)
+                .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+            if (record is null)
+            {
+                return Results.NotFound(ApiResponse.Fail("Không tìm thấy phiếu mượn."));
+            }
+
+            var dto = ToBorrowDto(record);
+            return Results.Ok(ApiResponse.Ok(dto));
+        });
+
+        // ─── Categories ─────────────────────────────────────────────────────────
+        var catGroup = app.MapGroup("/api/admin/categories").WithTags("Admin - Categories").RequireAuthorization("AdminOnly");
+
+        catGroup.MapGet("/", async (AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var cats = await db.Categories.AsNoTracking().OrderBy(x => x.Name).ToListAsync(cancellationToken);
+            return Results.Ok(ApiResponse.Ok(cats.Select(c => new CategoryDto(c.Id, c.Name, c.CreatedAt))));
+        });
+
+        catGroup.MapPost("/", async (CreateCategoryRequest request, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+            {
+                return Results.BadRequest(ApiResponse.Fail("Tên thể loại là bắt buộc."));
+            }
+            if (await db.Categories.AnyAsync(x => x.Name == request.Name.Trim(), cancellationToken))
+            {
+                return Results.Conflict(ApiResponse.Fail("Thể loại đã tồn tại."));
+            }
+            var cat = new Category { Name = request.Name.Trim() };
+            db.Categories.Add(cat);
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Created($"/api/admin/categories/{cat.Id}",
+                ApiResponse<CategoryDto>.Ok(new CategoryDto(cat.Id, cat.Name, cat.CreatedAt)));
+        }).RequireAuthorization("AdminOnly");
+
+        catGroup.MapDelete("/{id:guid}", async (Guid id, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var cat = await db.Categories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+            if (cat is null) return Results.NotFound(ApiResponse.Fail("Không tìm thấy thể loại."));
+            db.Categories.Remove(cat);
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Ok(ApiResponse.Ok(new { id }, "Đã xóa thể loại."));
+        }).RequireAuthorization("AdminOnly");
+
+        // ─── Shelves ──────────────────────────────────────────────────────────────
+        var shelfGroup = app.MapGroup("/api/admin/shelves").WithTags("Admin - Shelves").RequireAuthorization("AdminOrLibrarian");
+
+        shelfGroup.MapGet("/", async (AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var shelves = await db.ShelfLocations.AsNoTracking().OrderBy(x => x.Floor).ThenBy(x => x.ShelfCode).ToListAsync(cancellationToken);
+            return Results.Ok(ApiResponse.Ok(shelves.Select(s => new ShelfDto(s.Id, s.Area, s.Floor, s.ShelfCode, s.SectionCode, s.Description))));
+        });
+
+        shelfGroup.MapPost("/", async (CreateShelfRequest request, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var shelf = new ShelfLocation
+            {
+                Area = request.Area,
+                Floor = request.Floor,
+                ShelfCode = request.ShelfCode,
+                SectionCode = request.SectionCode,
+                Description = request.Description
+            };
+            db.ShelfLocations.Add(shelf);
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Created($"/api/admin/shelves/{shelf.Id}",
+                ApiResponse<ShelfDto>.Ok(new ShelfDto(shelf.Id, shelf.Area, shelf.Floor, shelf.ShelfCode, shelf.SectionCode, shelf.Description)));
+        });
+
+        shelfGroup.MapPut("/{id:guid}", async (Guid id, CreateShelfRequest request, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var shelf = await db.ShelfLocations.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+            if (shelf is null) return Results.NotFound(ApiResponse.Fail("Không tìm thấy kệ sách."));
+            shelf.Area = request.Area;
+            shelf.Floor = request.Floor;
+            shelf.ShelfCode = request.ShelfCode;
+            shelf.SectionCode = request.SectionCode;
+            shelf.Description = request.Description;
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Ok(ApiResponse.Ok(new ShelfDto(shelf.Id, shelf.Area, shelf.Floor, shelf.ShelfCode, shelf.SectionCode, shelf.Description)));
         });
     }
 
