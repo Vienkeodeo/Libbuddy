@@ -1,0 +1,13 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/admin/page": "/admin",
+  "/ai-advisor/page": "/ai-advisor",
+  "/books/page": "/books",
+  "/checkout/page": "/checkout",
+  "/favicon.ico/route": "/favicon.ico",
+  "/login/page": "/login",
+  "/my-books/page": "/my-books",
+  "/page": "/",
+  "/register/page": "/register"
+}

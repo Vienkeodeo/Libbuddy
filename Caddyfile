@@ -2,13 +2,13 @@
   admin off
 }
 
-:8080 {
+http://127.0.0.1:8080 {
   handle /api/* {
-    reverse_proxy localhost:5086
+    reverse_proxy 127.0.0.1:5086
   }
 
   handle /* {
-    reverse_proxy localhost:3001
+    reverse_proxy 127.0.0.1:3001
   }
 
   log {

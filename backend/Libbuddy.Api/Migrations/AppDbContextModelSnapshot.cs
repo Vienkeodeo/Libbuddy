@@ -432,6 +432,130 @@ namespace Libbuddy.Api.Migrations
                     b.ToTable("Categories");
                 });
 
+            modelBuilder.Entity("Libbuddy.Api.Domain.LibraryOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BorrowRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DeliveryAddress")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("DeliveryFee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("DepositAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<string>("FulfillmentMethod")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OrderCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PaymentStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<decimal>("PurchaseAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("RentalFee")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BorrowRecordId");
+
+                    b.HasIndex("OrderCode")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("LibraryOrders");
+                });
+
+            modelBuilder.Entity("Libbuddy.Api.Domain.LibraryOrderItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BookCopyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("LibraryOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("LineTotal")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookCopyId");
+
+                    b.HasIndex("BookId");
+
+                    b.HasIndex("LibraryOrderId");
+
+                    b.ToTable("LibraryOrderItems");
+                });
+
             modelBuilder.Entity("Libbuddy.Api.Domain.NeedAnalytics", b =>
                 {
                     b.Property<Guid>("Id")
@@ -759,6 +883,50 @@ namespace Libbuddy.Api.Migrations
                     b.Navigation("ParentCategory");
                 });
 
+            modelBuilder.Entity("Libbuddy.Api.Domain.LibraryOrder", b =>
+                {
+                    b.HasOne("Libbuddy.Api.Domain.BorrowRecord", "BorrowRecord")
+                        .WithMany()
+                        .HasForeignKey("BorrowRecordId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Libbuddy.Api.Domain.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BorrowRecord");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Libbuddy.Api.Domain.LibraryOrderItem", b =>
+                {
+                    b.HasOne("Libbuddy.Api.Domain.BookCopy", "BookCopy")
+                        .WithMany()
+                        .HasForeignKey("BookCopyId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Libbuddy.Api.Domain.Book", "Book")
+                        .WithMany()
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Libbuddy.Api.Domain.LibraryOrder", "LibraryOrder")
+                        .WithMany("Items")
+                        .HasForeignKey("LibraryOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Book");
+
+                    b.Navigation("BookCopy");
+
+                    b.Navigation("LibraryOrder");
+                });
+
             modelBuilder.Entity("Libbuddy.Api.Domain.UserRole", b =>
                 {
                     b.HasOne("Libbuddy.Api.Domain.Role", "Role")
@@ -814,6 +982,11 @@ namespace Libbuddy.Api.Migrations
             modelBuilder.Entity("Libbuddy.Api.Domain.Category", b =>
                 {
                     b.Navigation("BookCategories");
+                });
+
+            modelBuilder.Entity("Libbuddy.Api.Domain.LibraryOrder", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("Libbuddy.Api.Domain.Publisher", b =>

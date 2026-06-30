@@ -10,17 +10,26 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+var allowedOriginsConfig = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"];
+
+// Allow any *.netlify.app origin in addition to configured ones, so preview deploys Just Work.
+var allowedOrigins = allowedOriginsConfig
+    .Concat(["https://serene-brigadeiros-da0277.netlify.app", "https://libbuddy.netlify.app"])
+    .Distinct()
+    .ToArray();
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>
     {
         policy
-            .WithOrigins(allowedOrigins)
+            .SetIsOriginAllowed(origin =>
+                allowedOrigins.Contains(origin) ||
+                origin.EndsWith(".netlify.app", StringComparison.OrdinalIgnoreCase))
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -105,6 +114,28 @@ app.UseCors("frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+        var ex = feature?.Error;
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("GlobalException");
+        logger.LogError(ex, "Unhandled exception: {Path}", context.Request.Path);
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+        var payload = new
+        {
+            success = false,
+            message = ex?.Message ?? "Internal server error",
+            errorType = ex?.GetType().FullName,
+            stackTrace = ex?.StackTrace,
+            path = context.Request.Path.Value
+        };
+        await context.Response.WriteAsJsonAsync(payload);
+    });
+});
+
 app.MapGet("/api/health", () => Results.Ok(ApiResponse.Ok(new
 {
     service = "Libbuddy.Api",
@@ -122,15 +153,23 @@ if (app.Configuration.GetValue("Database:SeedOnStartup", true))
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await db.Database.ExecuteSqlRawAsync("CREATE EXTENSION IF NOT EXISTS vector;");
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("CREATE EXTENSION IF NOT EXISTS vector;");
+        }
+        catch (Exception extEx)
+        {
+            logger.LogWarning(extEx, "Could not enable pgvector extension (non-fatal).");
+        }
         await db.Database.MigrateAsync();
 
         var seeder = scope.ServiceProvider.GetRequiredService<DataSeeder>();
         await seeder.SeedAsync();
+        logger.LogInformation("Database seed completed successfully.");
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Database is not ready. API still started; check Database:Provider and ConnectionStrings:DefaultConnection.");
+        logger.LogError(ex, "Database seed failed. API still started; check connection string and migrations.");
     }
 }
 

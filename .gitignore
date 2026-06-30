@@ -27,3 +27,6 @@ backend/Libbuddy.Api/data/libbuddy.ai-settings.json
 
 # Logs
 *.log
+
+# Local Netlify folder
+.netlify

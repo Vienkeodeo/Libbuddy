@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import { CustomerBooksPage } from "@/components/customer-experience";
 
 export default function BooksPage() {
-  return <CustomerBooksPage />;
+  return (
+    <Suspense fallback={null}>
+      <CustomerBooksPage />
+    </Suspense>
+  );
 }

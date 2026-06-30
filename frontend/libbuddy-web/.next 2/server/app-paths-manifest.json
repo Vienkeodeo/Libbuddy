@@ -1,0 +1,13 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/ai-advisor/page": "app/ai-advisor/page.js",
+  "/books/page": "app/books/page.js",
+  "/checkout/page": "app/checkout/page.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/login/page": "app/login/page.js",
+  "/my-books/page": "app/my-books/page.js",
+  "/page": "app/page.js",
+  "/register/page": "app/register/page.js"
+}

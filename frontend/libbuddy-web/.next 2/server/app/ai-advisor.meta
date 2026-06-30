@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/ai-advisor/layout,_N_T_/ai-advisor/page,_N_T_/ai-advisor"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/ai-advisor/__PAGE__",
+    "/ai-advisor",
+    "/_index",
+    "/_head"
+  ]
+}
