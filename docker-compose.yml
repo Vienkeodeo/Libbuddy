@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: libbuddy-postgres
+    environment:
+      POSTGRES_USER: libbuddy
+      POSTGRES_PASSWORD: libbuddy_password
+      POSTGRES_DB: libbuddy_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - libbuddy_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U libbuddy -d libbuddy_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  libbuddy_postgres_data:

@@ -1,0 +1,30 @@
+@Libbuddy.Api_HostAddress = http://localhost:5086
+
+GET {{Libbuddy.Api_HostAddress}}/api/health
+Accept: application/json
+
+###
+
+POST {{Libbuddy.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@libbuddy.local",
+  "password": "Admin@123456"
+}
+
+###
+
+GET {{Libbuddy.Api_HostAddress}}/api/books?page=1&pageSize=8&availableOnly=true
+Accept: application/json
+
+###
+
+POST {{Libbuddy.Api_HostAddress}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "message": "Mình muốn sách dễ đọc về quản lý thời gian cho sinh viên"
+}
+
+###

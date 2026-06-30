@@ -1,0 +1,29 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Node
+node_modules/
+.next/
+dist/
+out/
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+appsettings.Production.json
+secrets.json
+backend/Libbuddy.Api/data/*.db
+backend/Libbuddy.Api/data/*.db-*
+backend/Libbuddy.Api/data/*.db.bak.*
+backend/Libbuddy.Api/data/libbuddy.ai-settings.json
+
+# OS
+.DS_Store
+
+# Logs
+*.log

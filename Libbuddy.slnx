@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/Libbuddy.Api/Libbuddy.Api.csproj" />
+  </Folder>
+</Solution>
